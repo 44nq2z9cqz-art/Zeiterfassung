@@ -210,7 +210,7 @@ const DB = {
   formatDuration(min, showSign=false) {
     if (min===null||min===undefined) return '--:--';
     const sign = min<0 ? '-' : (showSign&&min>0 ? '+' : '');
-    return `${sign}${Math.floor(Math.abs(min)/60)}:${String(Math.abs(min)%60).padStart(2,'0')}h`;
+    return `${sign}${Math.floor(Math.abs(min)/60)}:${String(Math.abs(min)%60).padStart(2,'00')} h`;
   },
   dateToTimeStr(date, korSek=0) {
     const d = new Date(date.getTime() + korSek*1000);

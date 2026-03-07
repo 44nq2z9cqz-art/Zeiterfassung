@@ -384,7 +384,7 @@ const App = {
           window.print();
         };
       <\/script>
-      <div id="zk-data" style="display:none">' + this._buildZKRows(rows, all, von, bis) + '</div>
+      <div id="zk-data" style="display:none">${this._buildZKRows(rows, all, von, bis)}</div>
       </body></html>`;
     const w = window.open('', '_blank');
     w.document.write(html); w.document.close();

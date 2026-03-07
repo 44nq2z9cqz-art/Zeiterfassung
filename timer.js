@@ -109,9 +109,9 @@ const Timer = {
     this.haptic('light');
     this.render();
     if (!silent) {
-      App.showToast(`Pause beendet: ${dauer} Min ✓`, 'success');
+      App.showToast(`Pause beendet: ${dauerMin} Min ✓`, 'success');
       if (s.pushPauseStart && Notification.permission==='granted')
-        new Notification('Pausenende', { body: `Pause beendet – Dauer: ${dauer} Min`, icon:'icon-192.png' });
+        new Notification('Pausenende', { body: `Pause beendet – Dauer: ${dauerMin} Min`, icon:'icon-192.png' });
     }
     App.renderHeutePausen(today);
   },

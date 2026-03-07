@@ -2,8 +2,8 @@ const CACHE = 'zeiterfassung-v2';
 const ASSETS = [
   './', './index.html', './manifest.json',
   './style.css',
-  './feiertage.js', './data.js', './timer.js',
-  './calendar.js', './zeitkonto.js', './settings.js', './app.js',
+  'feiertage.js', 'data.js', 'timer.js',
+  'calendar.js', 'zeitkonto.js', 'settings.js', 'app.js',
   'icon-192.png', 'icon-512.png'
 ];
 self.addEventListener('install', e => {
