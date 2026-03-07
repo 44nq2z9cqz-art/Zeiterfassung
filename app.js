@@ -188,9 +188,12 @@ const App = {
     document.querySelectorAll('.en-tag').forEach(b => b.classList.toggle('active', b.dataset.tag === (existing?.buchungstyp || '')));
 
     const betrag = existing ? Math.abs(existing.betragMin) : 0;
-    document.getElementById('en-drum-wrap').innerHTML = Drum.html('enBetrag', betrag, { maxH: 999 });
+    const h = Math.floor(betrag / 60);
+    const m = betrag % 60;
+    document.getElementById('en-time-input').value =
+      `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     modal.classList.add('open');
-    requestAnimationFrame(() => Drum.initAll(document.getElementById('en-drum-wrap')));
+    setTimeout(() => document.getElementById('en-time-input').focus(), 150);
   },
 
   _updateEntnahmeSign() {
@@ -215,7 +218,9 @@ const App = {
     const datum   = document.getElementById('en-datum').value;
     const grund   = document.getElementById('en-grund').value.trim();
     const buchungstyp = document.querySelector('.en-tag.active')?.dataset.tag || '';
-    const absBetrag = Drum.getMinutes('enBetrag');
+    const tval = document.getElementById('en-time-input').value || '00:00';
+    const [th, tm] = tval.split(':').map(Number);
+    const absBetrag = th * 60 + tm;
     const betragMin = this._entnahmeSign * absBetrag;  // negativ = Gutschrift
 
     if (!datum) { App.showToast('Datum fehlt', 'error'); return; }

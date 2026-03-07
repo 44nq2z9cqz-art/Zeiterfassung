@@ -13,9 +13,6 @@ const DB = {
       sollUrlaubKrankMinuten: 0,         // Urlaub/Krank
       sollFeiertageHalbMinuten: 240,     // 24.12 + 31.12
       ueberstundenSockelLimit: 40 * 60,
-      startsaldoDatum: null,
-      startsaldoSockel: 0,
-      startsaldoUeberSockel: 0,
       pauseStartKorrekturSek: 0,
       pauseEndeKorrekturSek: 0,
       tagStartKorrekturSek: 0,
@@ -34,7 +31,12 @@ const DB = {
   getSettings() {
     try {
       const s = localStorage.getItem(this.KEYS.SETTINGS);
-      return s ? { ...this.defaultSettings(), ...JSON.parse(s) } : this.defaultSettings();
+      const merged = s ? { ...this.defaultSettings(), ...JSON.parse(s) } : this.defaultSettings();
+      // Migration: remove startsaldo fields (replaced by Zeitkonto-Buchungen)
+      delete merged.startsaldoDatum;
+      delete merged.startsaldoSockel;
+      delete merged.startsaldoUeberSockel;
+      return merged;
     } catch { return this.defaultSettings(); }
   },
   saveSettings(s) { localStorage.setItem(this.KEYS.SETTINGS, JSON.stringify(s)); },
@@ -136,19 +138,18 @@ const DB = {
     const today  = this.todayStr();
     const yesterday = this.dateAdd(today, -1);
     const limit  = s.ueberstundenSockelLimit;
-    const stichtag = s.startsaldoDatum || null;
+    // Kein Startsaldo mehr aus Einstellungen - alles über Zeitkonto-Buchungen
+    let sockel      = 0;
+    let ueberSockel = 0;
 
-    let sockel     = s.startsaldoSockel || 0;
-    let ueberSockel= s.startsaldoUeberSockel || 0;
-
-    // Entnahmen-Map aufbauen
-    const entnahmen = this.getEntnahmen().filter(e => !stichtag || e.datum > stichtag);
+    // Entnahmen-Map aufbauen (alle)
+    const entnahmen = this.getEntnahmen();
     const entnahmenMap = {};
     entnahmen.forEach(e => { (entnahmenMap[e.datum] = entnahmenMap[e.datum] || []).push(e); });
 
     // Alle relevanten Daten bis gestern (Vortag)
-    const arbDaten  = Object.keys(all).filter(d => d <= yesterday && (!stichtag || d > stichtag));
-    const entDaten  = Object.keys(entnahmenMap).filter(d => d <= yesterday && (!stichtag || d > stichtag));
+    const arbDaten  = Object.keys(all).filter(d => d <= yesterday);
+    const entDaten  = Object.keys(entnahmenMap).filter(d => d <= yesterday);
     const allDates  = [...new Set([...arbDaten, ...entDaten])].sort();
 
     for (const d of allDates) {

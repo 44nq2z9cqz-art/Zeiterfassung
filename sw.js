@@ -4,7 +4,7 @@ const ASSETS = [
   './style.css',
   './feiertage.js', './data.js', './timer.js',
   './calendar.js', './zeitkonto.js', './settings.js', './app.js',
-  './icon-192.png', './icon-512.png'
+  'icon-192.png', 'icon-512.png'
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

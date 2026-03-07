@@ -1260,3 +1260,48 @@ select.setting-input { max-width: 160px; width: 160px; }
 .zk-row2 .zk-label {
   min-height: 1.2em;
 }
+
+/* ═══ Native Time Field (Settings) ═══════════════════════════════════════ */
+.native-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.native-time-field:last-child { border-bottom: none; }
+.ntf-label {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.ntf-input {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--moss-600);
+  background: var(--bg-inset);
+  border: 2px solid var(--moss-200);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  width: 100%;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: center;
+  letter-spacing: 2px;
+}
+.ntf-input:focus {
+  outline: none;
+  border-color: var(--moss-400);
+  background: var(--moss-50);
+}
+
+/* ═══ Version Number ══════════════════════════════════════════════════════ */
+.settings-version {
+  text-align: center;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-4);
+  padding: 20px 0 8px;
+}
