@@ -91,7 +91,9 @@ const Timer = {
     const now  = new Date();
     const korrigiertesEnde = new Date(now.getTime() + korr*1000);
     const start = this.state.aktuellesPause.start;
-    const dauer = Math.max(0, Math.round((korrigiertesEnde - start) / 60000));
+    const dauerMs  = Math.max(0, korrigiertesEnde - start);
+    const dauerSek = Math.floor(dauerMs / 1000);
+    const dauerMin = Math.floor(dauerSek / 60);  // abgerundet für Bilanz
     const startStr = DB.dateToTimeStr(start);
     const endStr   = DB.dateToTimeStr(korrigiertesEnde);
     const today = DB.todayStr();
@@ -101,7 +103,8 @@ const Timer = {
     if (all[today]) { delete all[today]._pauseAktiv; delete all[today]._pauseAktivId; delete all[today]._pauseStartKorr; }
     localStorage.setItem(DB.KEYS.EINTRAEGE, JSON.stringify(all));
 
-    DB.addPause(today, { start: startStr, end: endStr, dauer, korrekturStart: all[today]?._pauseStartKorr||0, korrekturEnde: korr });
+    // dauerSek gespeichert für genaue Anzeige; dauer (Minuten) für Bilanzberechnung
+    DB.addPause(today, { start: startStr, end: endStr, dauer: dauerMin, dauerSek, korrekturStart: all[today]?._pauseStartKorr||0, korrekturEnde: korr });
     this.state.aktuellesPause = null; this.state.pauseLaufend = false;
     this.haptic('light');
     this.render();

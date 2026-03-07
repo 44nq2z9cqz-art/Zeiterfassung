@@ -7,14 +7,16 @@ const Calendar = {
 
   init() { this.selectedDate = null; },
 
-  switchView(v) {
-    this.view = v;
-    document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view===v));
+  prevPeriod() {
+    this.currentMonth--;
+    if (this.currentMonth < 0) { this.currentMonth = 11; this.currentYear--; }
     this.render();
   },
-
-  prevPeriod() { if(this.view==='month'){this.currentMonth--;if(this.currentMonth<0){this.currentMonth=11;this.currentYear--;}}else{const d=new Date(this.currentYear,this.currentMonth,1);d.setDate(d.getDate()-7);this.currentYear=d.getFullYear();this.currentMonth=d.getMonth();}this.render(); },
-  nextPeriod() { if(this.view==='month'){this.currentMonth++;if(this.currentMonth>11){this.currentMonth=0;this.currentYear++;}}else{const d=new Date(this.currentYear,this.currentMonth,1);d.setDate(d.getDate()+7);this.currentYear=d.getFullYear();this.currentMonth=d.getMonth();}this.render(); },
+  nextPeriod() {
+    this.currentMonth++;
+    if (this.currentMonth > 11) { this.currentMonth = 0; this.currentYear++; }
+    this.render();
+  },
   goToToday()  { this.currentYear=new Date().getFullYear();this.currentMonth=new Date().getMonth();this.render(); },
 
   render() {
@@ -22,8 +24,8 @@ const Calendar = {
     if (!container) return;
     const names = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
     document.getElementById('cal-period-label').textContent =
-      this.view==='month' ? `${names[this.currentMonth]} ${this.currentYear}` : `KW ${this._kw(new Date(this.currentYear,this.currentMonth,1))}`;
-    container.innerHTML = this.view==='month' ? this._buildMonth() : this._buildWeek();
+      `${names[this.currentMonth]} ${this.currentYear}`;
+    container.innerHTML = this._buildMonth();
     // Detailansicht wieder rendern wenn ein Tag ausgewählt ist
     if (this.selectedDate) this._renderDetail(this.selectedDate);
   },
@@ -72,39 +74,6 @@ const Calendar = {
     return html;
   },
 
-  _buildWeek() {
-    const today=DB.todayStr(); const all=DB.getEintraege(); const s=DB.getSettings();
-    const y=this.currentYear; const m=this.currentMonth;
-    // Montag der aktuellen Woche
-    const base=new Date(y,m,1);
-    const dow=base.getDay()===0?6:base.getDay()-1;
-    base.setDate(base.getDate()-dow);
-    const wt=['Mo','Di','Mi','Do','Fr','Sa','So'];
-    let html='<div class="week-grid">';
-    for(let i=0;i<7;i++) {
-      const d=new Date(base); d.setDate(base.getDate()+i);
-      const ds=DB.dateToStr(d); const e=all[ds]||{};
-      const isTod=ds===today; const isSel=ds===this.selectedDate; const isFut=ds>today;
-      const feiertag=window.Feiertage.isFeiertag(ds,d.getFullYear());
-      const soll=DB.getSollMinuten(ds,s); const ist=e?DB.calcArbeitszeit(e):null;
-      const diff=ist!==null?ist-soll:null;
-      const cls=['week-row',isTod?'today':'',isSel?'selected':''].filter(Boolean).join(' ');
-      html+=`<div class="${cls}" onclick="Calendar.selectDay('${ds}')">
-        <div class="week-day"><span class="week-wd">${wt[i]}</span><span class="week-dd">${d.getDate()}.${d.getMonth()+1}.</span></div>
-        <div class="week-info">
-          ${feiertag?`<span class="week-special">${feiertag}</span>`
-            :e?.tagTyp?`<span class="week-special">${e.tagTyp==='urlaub'?'Urlaub':'Krank'}</span>`
-            :ist!==null?`<span class="week-times">${e.start}–${e.end}</span>`
-            :isFut?'':`<span class="week-missing">–</span>`}
-        </div>
-        ${diff!==null&&!isFut?`<span class="week-diff ${diff>=0?'pos':'neg'}">${DB.formatDuration(diff,true)}</span>`:''}
-      </div>`;
-    }
-    html+='</div>';
-    html+=`<div id="cal-detail-area">${this.selectedDate?'':'<p class="cal-hint">Tag antippen für Details</p>'}</div>`;
-    html+=`<button class="btn-auswertungen" onclick="App.openAuswertungen()">📊 Auswertungen</button>`;
-    return html;
-  },
 
   selectDay(dateStr) {
     this.selectedDate = dateStr;

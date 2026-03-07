@@ -1,7 +1,7 @@
 // Einstellungen v2.3 – nativer iOS-Zeitpicker überall, kein Startsaldo
 const Settings = {
   _page: 'main',
-  APP_VERSION: '2.3.0',
+  APP_VERSION: '2.4.0',
 
   render() {
     const c = document.getElementById('settings-container');
@@ -51,6 +51,23 @@ const Settings = {
     </div>`;
   },
 
+  // ─── hhhh:mm Helfer ─────────────────────────────────────────────────────
+  _minToHHMM(min) {
+    const abs = Math.abs(min || 0);
+    return `${String(Math.floor(abs/60)).padStart(3,'0')}:${String(abs%60).padStart(2,'0')}`;
+  },
+  _hhmmToMin(str) {
+    if (!str) return 0;
+    const parts = str.replace(/[^0-9:]/g,'').split(':');
+    const h = parseInt(parts[0]||0);
+    const m = parseInt(parts[1]||0);
+    return h * 60 + Math.min(59, m);
+  },
+  validateHHMM(el) {
+    const min = this._hhmmToMin(el.value);
+    el.value = this._minToHHMM(min);
+  },
+
   // ─── Helfer: Zeit in Minuten ────────────────────────────────────────────
   // Native <input type="time"> gibt "HH:MM" zurück → in Minuten
   _timeVal(id) {
@@ -93,7 +110,15 @@ const Settings = {
         <div class="settings-info-box">Nur das Sockel-Limit für Konto 1. Vortragsbeträge als Zeitkonto-Buchung eintragen.</div>
         <div class="settings-section">
           <div class="settings-card">
-            ${this._timeField('s-limit', s.ueberstundenSockelLimit, 'Sockel-Limit Konto 1')}
+            <div class="native-time-field">
+              <span class="ntf-label">Sockel-Limit Konto 1 (z.B. 040:00)</span>
+              <input type="text" id="s-limit" class="ntf-input hhmm-input"
+                value="${Settings._minToHHMM(s.ueberstundenSockelLimit)}"
+                placeholder="040:00"
+                pattern="[0-9]+:[0-5][0-9]"
+                inputmode="numeric"
+                onblur="Settings.validateHHMM(this)">
+            </div>
           </div>
         </div>
         <button class="btn-primary btn-full mt-8" onclick="Settings.saveZeitkonto()">Speichern</button>`,
@@ -213,7 +238,7 @@ const Settings = {
 
   saveZeitkonto() {
     const s = DB.getSettings();
-    const limit = this._timeVal('s-limit');
+    const limit = this._hhmmToMin(document.getElementById('s-limit')?.value);
     DB.saveSettings({ ...s,
       ueberstundenSockelLimit: limit || 2400,
       // Startsaldo-Felder komplett entfernen/nullen

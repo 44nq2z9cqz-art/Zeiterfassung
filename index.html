@@ -37,10 +37,7 @@
       </div>
       <button class="today-btn" onclick="Calendar.goToToday()">Heute</button>
     </div>
-    <div class="view-tabs">
-      <button class="view-tab active" data-view="month" onclick="Calendar.switchView('month')">Monat</button>
-      <button class="view-tab" data-view="week" onclick="Calendar.switchView('week')">Woche</button>
-    </div>
+
     <div id="calendar-container"></div>
   </div>
 
@@ -186,7 +183,10 @@
         <div class="form-group">
           <label class="form-label">Betrag (h:min)</label>
           <div class="native-time-wrap">
-            <input type="time" id="en-time-input" class="ntf-input" value="00:00" step="60">
+            <input type="text" id="en-time-input" class="ntf-input hhmm-input"
+              value="000:00" placeholder="000:00"
+              inputmode="numeric"
+              onblur="this.value=this.value.replace(/[^0-9:]/g,'')">
           </div>
         </div>
         <div class="form-group">

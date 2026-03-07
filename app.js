@@ -21,6 +21,15 @@ const App = {
     if (tab === 'today')      { Timer.render(); this.renderHeutePausen(DB.todayStr()); }
   },
 
+  _fmtPauseSec(dauerSek) {
+    if (!dauerSek && dauerSek !== 0) return '--';
+    const h = Math.floor(dauerSek / 3600);
+    const m = Math.floor((dauerSek % 3600) / 60);
+    const s = dauerSek % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${m}:${String(s).padStart(2,'0')}`;
+  },
+
   // ─── Heute: Pausen-Liste ─────────────────────────────────────────────────
   renderHeutePausen(dateStr) {
     const el = document.getElementById('tages-pausen');
@@ -30,11 +39,10 @@ const App = {
     if (!pausen.length) { el.innerHTML = '<p class="no-data">Keine Pausen heute</p>'; return; }
     const total = pausen.reduce((a, p) => a + (p.dauer || 0), 0);
     el.innerHTML = pausen.map(p => {
-      const sec = (p.dauerSek !== undefined) ? p.dauerSek % 60 : 0;
-      const minStr = `${p.dauer}:${String(sec).padStart(2,'0')} min`;
+      const dispSek = p.dauerSek !== undefined ? p.dauerSek : (p.dauer * 60);
       return `<div class="pause-item">
         <div class="pause-info"><span class="pause-time">${p.start} – ${p.end}</span></div>
-        <span class="pause-dauer">${minStr}</span>
+        <span class="pause-dauer">${this._fmtPauseSec(dispSek)}</span>
       </div>`;
     }).join('') +
     `<div class="pause-summe">Gesamt: ${DB.formatDuration(total)}</div>`;
@@ -128,10 +136,10 @@ const App = {
     const pausen = [...(e.pausen || [])].sort((a, b) => b.id - a.id);
     if (!pausen.length) { el.innerHTML = '<p class="no-data">Keine Pausen</p>'; return; }
     el.innerHTML = pausen.map(p => {
-      const sec = (p.dauerSek !== undefined) ? p.dauerSek % 60 : 0;
+      const dispSek = p.dauerSek !== undefined ? p.dauerSek : (p.dauer * 60);
       return `<div class="pause-item">
         <div class="pause-info"><span class="pause-time">${p.start} – ${p.end}</span></div>
-        <span class="pause-dauer">${p.dauer}:${String(sec).padStart(2,'0')} min</span>
+        <span class="pause-dauer">${App._fmtPauseSec(dispSek)}</span>
         <div class="pause-actions">
           <button class="icon-btn danger" onclick="App.deletePauseFromModal('${dateStr}',${p.id})">🗑</button>
         </div>
@@ -190,8 +198,9 @@ const App = {
     const betrag = existing ? Math.abs(existing.betragMin) : 0;
     const h = Math.floor(betrag / 60);
     const m = betrag % 60;
+    // Use hhhh:mm format for values > 24h
     document.getElementById('en-time-input').value =
-      `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      `${String(h).padStart(3,'0')}:${String(m).padStart(2,'0')}`;
     modal.classList.add('open');
     setTimeout(() => document.getElementById('en-time-input').focus(), 150);
   },
@@ -218,9 +227,9 @@ const App = {
     const datum   = document.getElementById('en-datum').value;
     const grund   = document.getElementById('en-grund').value.trim();
     const buchungstyp = document.querySelector('.en-tag.active')?.dataset.tag || '';
-    const tval = document.getElementById('en-time-input').value || '00:00';
-    const [th, tm] = tval.split(':').map(Number);
-    const absBetrag = th * 60 + tm;
+    const tval = document.getElementById('en-time-input').value || '000:00';
+    const parts = tval.split(':');
+    const absBetrag = (parseInt(parts[0]||0) * 60) + Math.min(59, parseInt(parts[1]||0));
     const betragMin = this._entnahmeSign * absBetrag;  // negativ = Gutschrift
 
     if (!datum) { App.showToast('Datum fehlt', 'error'); return; }
@@ -264,6 +273,45 @@ const App = {
 
   doExportPDF() {
     this.generatePDF(document.getElementById('au-von').value, document.getElementById('au-bis').value);
+  },
+
+  _buildZKRows(rows, all, von, bis) {
+    const s2 = DB.getSettings();
+    const limit2 = s2.ueberstundenSockelLimit;
+    const enAll = DB.getEntnahmen().filter(e => (!von || e.datum >= von) && (!bis || e.datum <= bis));
+    const enMap2 = {};
+    enAll.forEach(e => { (enMap2[e.datum] = enMap2[e.datum] || []).push(e); });
+    const dates2 = [...new Set([
+      ...rows.filter(r => r.ds).map(r => r.ds),
+      ...enAll.map(e => e.datum)
+    ])].sort();
+    let lS = 0, lU = 0, result = '';
+    const fmtD = v => DB.formatDuration(v, true);
+    for (const d of dates2) {
+      const e2 = all[d];
+      if (e2 && e2.start && e2.end) {
+        const diff2 = DB.getDiffMinuten(d);
+        if (diff2 > 0) { const r2 = Math.max(0, limit2 - lS); lS += Math.min(diff2, r2); lU += diff2 - Math.min(diff2, r2); }
+        else if (diff2 < 0) { const a2 = Math.abs(diff2); const as2 = Math.min(a2, lS); lS -= as2; lU -= Math.min(a2 - as2, lU); }
+        if (diff2 !== 0) result += '<tr><td>' + DB.formatDateDE(d) + '</td><td>Arbeitstag</td>'
+          + '<td class="' + (diff2 >= 0 ? 'pos' : 'neg') + '">' + fmtD(diff2) + '</td>'
+          + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+          + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+      }
+      if (enMap2[d]) {
+        enMap2[d].forEach(en2 => {
+          const b = en2.betragMin;
+          if (b > 0) { const aU = Math.min(b, Math.max(0, lU)); lU -= aU; lS = Math.max(-999999, lS - (b - aU)); }
+          else if (b < 0) { const gv = Math.abs(b); const r2 = Math.max(0, limit2 - lS); lS += Math.min(gv, r2); lU += gv - Math.min(gv, r2); }
+          result += '<tr class="sp"><td>' + DB.formatDateDE(d) + '</td>'
+            + '<td>Buchung: ' + (en2.buchungstyp || '') + ' ' + (en2.grund || '') + '</td>'
+            + '<td class="' + (b <= 0 ? 'pos' : 'neg') + '">' + fmtD(b) + '</td>'
+            + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+            + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+        });
+      }
+    }
+    return result;
   },
 
   generatePDF(von, bis) {
@@ -321,7 +369,23 @@ const App = {
         <td class="${totalDiff>=0?'pos':'neg'}">${DB.formatDuration(totalDiff,true)}</td>
         <td colspan="2"></td>
       </tr></tfoot></table>
-      <script>window.onload=()=>window.print();<\/script></body></html>`;
+      <h2 style="font-size:13px;color:#4a7c59;margin-top:20px;border-top:2px solid #4a7c59;padding-top:8px">Zeitkonto-Verlauf</h2>
+      <table><thead><tr>
+        <th>Datum</th><th>Ereignis</th><th>Differenz</th>
+        <th>Konto 1</th><th>Konto 2</th><th>Gesamt</th>
+      </tr></thead><tbody id="zk-rows-placeholder"></tbody></table>
+      <script>
+        window.onload = () => {
+          // inject Zeitkonto rows via DOM to avoid template literal escaping issues
+          const zkData = document.getElementById('zk-data');
+          if (zkData) {
+            document.getElementById('zk-rows-placeholder').innerHTML = zkData.textContent;
+          }
+          window.print();
+        };
+      <\/script>
+      <div id="zk-data" style="display:none">' + this._buildZKRows(rows, all, von, bis) + '</div>
+      </body></html>`;
     const w = window.open('', '_blank');
     w.document.write(html); w.document.close();
   },
