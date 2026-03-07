@@ -1,0 +1,280 @@
+// Einstellungen v2.1 – verwendet Drum-Modul
+const Settings = {
+  _page: 'main',
+  _signs: { sockel: 1, ueberSockel: 1 },
+
+  render() {
+    const c = document.getElementById('settings-container');
+    if (!c) return;
+    if (this._page === 'main') this._renderMain(c);
+    else this._renderSubPage(c, this._page);
+  },
+
+  _renderMain(c) {
+    c.innerHTML = `
+      <div class="settings-menu">
+        ${[
+          ['arbeitszeit','⏰','Einstellungen Arbeitszeit'],
+          ['zeitkonto',  '🏦','Einstellungen Zeitkonto'],
+          ['timetracking','⏸','Timetracking'],
+          ['notifications','🔔','Benachrichtigungen'],
+          ['daten',      '💾','Daten & Backup']
+        ].map(([p,ic,lb])=>`
+          <div class="settings-menu-item" onclick="Settings.goTo('${p}')">
+            <span class="smi-icon">${ic}</span>
+            <span class="smi-label">${lb}</span>
+            <span class="smi-arrow">›</span>
+          </div>`).join('')}
+      </div>
+      <div class="settings-section mt-16">
+        <div class="settings-card">
+          <div class="setting-row danger-row">
+            <label>Alle Daten löschen</label>
+            <button class="btn-danger btn-sm" onclick="Settings.deleteAll()">🗑 Löschen</button>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  goTo(page) {
+    this._page = page;
+    const c = document.getElementById('settings-container');
+    if (c) this._renderSubPage(c, page);
+  },
+  goBack() { this._page = 'main'; this.render(); },
+
+  _back(title) {
+    return `<div class="subpage-header">
+      <button class="back-btn" onclick="Settings.goBack()">‹ Einstellungen</button>
+      <h3>${title}</h3>
+    </div>`;
+  },
+
+  _renderSubPage(c, page) {
+    const s = DB.getSettings();
+    this._signs.sockel     = (s.startsaldoSockel     || 0) < 0 ? -1 : 1;
+    this._signs.ueberSockel= (s.startsaldoUeberSockel|| 0) < 0 ? -1 : 1;
+
+    const pages = {
+      arbeitszeit: () => `
+        ${this._back('Einstellungen Arbeitszeit')}
+        <div class="settings-info-box">Änderungen wirken ab dem aktuellen Tag.</div>
+        <div class="settings-section">
+          <div class="settings-card">
+            <div class="setting-row setting-row-col">
+              <label>Arbeitszeit Mo–Fr</label>
+              ${Drum.html('soll', s.sollarbeitszeitMinuten, {maxH:24})}
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>Soll-Zeit Urlaub / Krank</label>
+              ${Drum.html('urlaubKrank', s.sollUrlaubKrankMinuten||0, {maxH:24})}
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>Soll-Zeit 24.12 + 31.12 (Werktag)</label>
+              ${Drum.html('halbtag', s.sollFeiertageHalbMinuten||240, {maxH:24})}
+            </div>
+          </div>
+        </div>
+        <button class="btn-primary btn-full mt-8" onclick="Settings.saveArbeitszeit()">Speichern</button>`,
+
+      zeitkonto: () => `
+        ${this._back('Einstellungen Zeitkonto')}
+        <div class="settings-section">
+          <div class="settings-card">
+            <div class="setting-row">
+              <label>Stichtag Startsaldo</label>
+              <input type="date" class="setting-input" id="s-stichtag" value="${s.startsaldoDatum||''}">
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>Startsaldo Konto 1 · Sockel <span class="label-hint">+ Guthaben · − Schulden</span></label>
+              <div class="saldo-sign-row">
+                <div class="sign-toggle">
+                  <button class="sign-btn ${this._signs.sockel>0?'active':''}" id="sign-s-pos" onclick="Settings.setSign('sockel',1)">+</button>
+                  <button class="sign-btn ${this._signs.sockel<0?'active':''}" id="sign-s-neg" onclick="Settings.setSign('sockel',-1)">−</button>
+                </div>
+                ${Drum.html('saldoSockel', Math.abs(s.startsaldoSockel||0), {maxH:999})}
+              </div>
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>Startsaldo Konto 2 · Über Sockel <span class="label-hint">+ Guthaben · − Schulden</span></label>
+              <div class="saldo-sign-row">
+                <div class="sign-toggle">
+                  <button class="sign-btn ${this._signs.ueberSockel>0?'active':''}" id="sign-u-pos" onclick="Settings.setSign('ueberSockel',1)">+</button>
+                  <button class="sign-btn ${this._signs.ueberSockel<0?'active':''}" id="sign-u-neg" onclick="Settings.setSign('ueberSockel',-1)">−</button>
+                </div>
+                ${Drum.html('saldoUeberSockel', Math.abs(s.startsaldoUeberSockel||0), {maxH:999})}
+              </div>
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>Sockel-Limit</label>
+              ${Drum.html('sockelLimit', s.ueberstundenSockelLimit, {maxH:999})}
+            </div>
+          </div>
+        </div>
+        <button class="btn-primary btn-full mt-8" onclick="Settings.saveZeitkonto()">Speichern</button>`,
+
+      timetracking: () => `
+        ${this._back('Timetracking')}
+        <div class="settings-info-box">Stoppuhr-Korrektur in Sekunden. Negativ = früher, Positiv = später.</div>
+        <div class="settings-section">
+          <div class="settings-card">
+            ${[
+              ['pauseStartKorrekturSek',  'Verzögerung Pause Start'],
+              ['pauseEndeKorrekturSek',   'Verzögerung Pause Stopp'],
+              ['tagStartKorrekturSek',    'Verzögerung Tagesbeginn'],
+              ['tagEndeKorrekturSek',     'Verzögerung Tagesende'],
+            ].map(([key,label])=>`
+              <div class="setting-row setting-row-col">
+                <label>${label}</label>
+                <div class="slider-row">
+                  <input type="range" id="sl-${key}" min="-120" max="120" step="1"
+                    value="${s[key]||0}" class="sek-slider"
+                    oninput="document.getElementById('sv-${key}').textContent=this.value>0?'+'+this.value+'s':this.value+'s'">
+                  <span class="slider-val" id="sv-${key}">${(s[key]||0)>0?'+'+(s[key]||0)+'s':(s[key]||0)+'s'}</span>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+        <button class="btn-primary btn-full mt-8" onclick="Settings.saveTimetracking()">Speichern</button>`,
+
+      notifications: () => `
+        ${this._back('Benachrichtigungen')}
+        <div class="settings-section">
+          <div class="settings-card">
+            <div class="setting-row">
+              <label>Push-Benachrichtigungen</label>
+              <div class="toggle-wrap">
+                <input type="checkbox" id="s-push" class="toggle-input" ${s.pushNotifications?'checked':''}
+                  onchange="Settings.togglePush(this.checked)">
+                <label for="s-push" class="toggle-label"></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>Erinnerung Arbeitsbeginn</label>
+              <input type="time" class="setting-input time-input" id="s-start-reminder" value="${s.startErinnerung||''}">
+            </div>
+            <div class="setting-row">
+              <label>Erinnerung Arbeitsende</label>
+              <input type="time" class="setting-input time-input" id="s-end-reminder" value="${s.endeErinnerung||''}">
+            </div>
+            <div class="setting-row">
+              <label>Benachrichtigung Pausenbeginn/-ende</label>
+              <div class="toggle-wrap">
+                <input type="checkbox" id="s-push-pause" class="toggle-input" ${s.pushPauseStart?'checked':''}>
+                <label for="s-push-pause" class="toggle-label"></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label>Erinnerung Datensicherung</label>
+              <select class="setting-input" id="s-datensicherung">
+                <option value="" ${!s.pushDatensicherung?'selected':''}>Aus</option>
+                <option value="daily"  ${s.pushDatensicherung==='daily'?'selected':''}>Täglich</option>
+                <option value="weekly" ${s.pushDatensicherung==='weekly'?'selected':''}>Wöchentlich</option>
+              </select>
+            </div>
+            <div class="setting-row setting-row-col">
+              <label>E-Mail für Tagesabschluss-Bericht</label>
+              <input type="email" class="setting-input" id="s-email" value="${s.emailEmpfaenger||''}" placeholder="deine@email.de" style="max-width:100%;width:100%">
+            </div>
+          </div>
+        </div>
+        <button class="btn-primary btn-full mt-8" onclick="Settings.saveNotifications()">Speichern</button>`,
+
+      daten: () => `
+        ${this._back('Daten & Backup')}
+        <div class="settings-section">
+          <div class="settings-card">
+            <div class="setting-row">
+              <label>Backup erstellen</label>
+              <button class="btn-outline btn-sm" onclick="DB.createBackup()">💾 Download</button>
+            </div>
+            <div class="setting-row">
+              <label>Backup wiederherstellen</label>
+              <button class="btn-outline btn-sm" onclick="Settings.triggerRestore()">📂 Datei wählen</button>
+              <input type="file" id="restore-file" accept=".json" style="display:none" onchange="Settings.doRestore(event)">
+            </div>
+          </div>
+        </div>`
+    };
+
+    c.innerHTML = pages[page]?.() || '';
+    requestAnimationFrame(() => Drum.initAll(c));
+  },
+
+  setSign(which, sign) {
+    this._signs[which] = sign;
+    const ids = which==='sockel'
+      ? ['sign-s-pos','sign-s-neg']
+      : ['sign-u-pos','sign-u-neg'];
+    document.getElementById(ids[0])?.classList.toggle('active', sign>0);
+    document.getElementById(ids[1])?.classList.toggle('active', sign<0);
+  },
+
+  saveArbeitszeit() {
+    const s = DB.getSettings();
+    DB.saveSettings({ ...s,
+      sollarbeitszeitMinuten:   Drum.getMinutes('soll') || 480,
+      sollUrlaubKrankMinuten:   Drum.getMinutes('urlaubKrank'),
+      sollFeiertageHalbMinuten: Drum.getMinutes('halbtag'),
+    });
+    DB.recalcUeberstunden();
+    App.showToast('Gespeichert ✓', 'success');
+    this.goBack();
+  },
+
+  saveZeitkonto() {
+    const s = DB.getSettings();
+    DB.saveSettings({ ...s,
+      startsaldoDatum:        document.getElementById('s-stichtag')?.value || null,
+      startsaldoSockel:       this._signs.sockel      * Drum.getMinutes('saldoSockel'),
+      startsaldoUeberSockel:  this._signs.ueberSockel * Drum.getMinutes('saldoUeberSockel'),
+      ueberstundenSockelLimit: Drum.getMinutes('sockelLimit') || 2400,
+    });
+    DB.recalcUeberstunden();
+    App.showToast('Gespeichert ✓', 'success');
+    this.goBack();
+  },
+
+  saveTimetracking() {
+    const s = DB.getSettings();
+    DB.saveSettings({ ...s,
+      pauseStartKorrekturSek: parseInt(document.getElementById('sl-pauseStartKorrekturSek')?.value||0),
+      pauseEndeKorrekturSek:  parseInt(document.getElementById('sl-pauseEndeKorrekturSek')?.value||0),
+      tagStartKorrekturSek:   parseInt(document.getElementById('sl-tagStartKorrekturSek')?.value||0),
+      tagEndeKorrekturSek:    parseInt(document.getElementById('sl-tagEndeKorrekturSek')?.value||0),
+    });
+    App.showToast('Gespeichert ✓', 'success');
+    this.goBack();
+  },
+
+  saveNotifications() {
+    const s = DB.getSettings();
+    DB.saveSettings({ ...s,
+      pushNotifications: document.getElementById('s-push')?.checked ?? false,
+      startErinnerung:   document.getElementById('s-start-reminder')?.value || null,
+      endeErinnerung:    document.getElementById('s-end-reminder')?.value || null,
+      pushPauseStart:    document.getElementById('s-push-pause')?.checked ?? false,
+      pushPauseEnde:     document.getElementById('s-push-pause')?.checked ?? false,
+      pushDatensicherung:document.getElementById('s-datensicherung')?.value || null,
+      emailEmpfaenger:   document.getElementById('s-email')?.value || '',
+    });
+    App.showToast('Gespeichert ✓', 'success');
+    this.goBack();
+  },
+
+  togglePush(en) { if(en) Notifications.requestPermission(); },
+  triggerRestore() { document.getElementById('restore-file')?.click(); },
+  doRestore(ev) {
+    const f=ev.target.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=e=>{try{DB.restoreBackup(e.target.result);App.showToast('Backup wiederhergestellt ✓','success');App.init();}catch(er){App.showToast('Fehler: '+er.message,'error');}};
+    r.readAsText(f);
+  },
+  deleteAll() {
+    if(!confirm('Wirklich alle Daten löschen?'))return;
+    [DB.KEYS.EINTRAEGE,DB.KEYS.SETTINGS,DB.KEYS.UEBERSTUNDEN,DB.KEYS.ENTNAHMEN].forEach(k=>localStorage.removeItem(k));
+    App.showToast('Alle Daten gelöscht','info');
+    App.init();
+  }
+};
+window.Settings = Settings;
