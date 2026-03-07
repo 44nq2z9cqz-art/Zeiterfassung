@@ -53,7 +53,6 @@ const Timer = {
     this.render();
     App.showToast('Arbeitszeit beendet ✓', 'success');
     // E-Mail Entwurf anbieten
-    const s = DB.getSettings();
     if (s.emailEmpfaenger) {
       setTimeout(() => {
         if (confirm('Tagesbericht per E-Mail senden?')) DB.buildEmailEntwurf(today);

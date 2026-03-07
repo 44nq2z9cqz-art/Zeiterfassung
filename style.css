@@ -1225,3 +1225,38 @@ select.setting-input { max-width: 160px; width: 160px; }
   border-top: 1px solid var(--border);
   margin-top: 4px;
 }
+
+/* ═══ Native Time Input (iOS Wheel) ══════════════════════════════════════ */
+.native-time-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 0 10px;
+}
+.native-time-input {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-1);
+  background: var(--bg-inset);
+  border: 2px solid var(--moss-300);
+  border-radius: var(--radius);
+  padding: 16px 24px;
+  text-align: center;
+  width: 100%;
+  max-width: 200px;
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+}
+.native-time-input:focus {
+  outline: none;
+  border-color: var(--moss-500);
+}
+
+/* ═══ Kacheln alignment fix ══════════════════════════════════════════════ */
+.zk-row2 .zk-kachel {
+  min-height: 120px;
+}
+.zk-row2 .zk-label {
+  min-height: 1.2em;
+}

@@ -46,7 +46,7 @@ const App = {
     setTimeout(() => Calendar.selectDay(dateStr), 80);
   },
 
-  // ─── Zeit-Edit mit Drum ──────────────────────────────────────────────────
+  // ─── Zeit-Edit mit nativem iOS-Picker ───────────────────────────────────
   editZeit(dateStr, field) {
     const e = DB.getEintrag(dateStr) || {};
     const label = field === 'start' ? 'Arbeitsbeginn' : 'Arbeitsende';
@@ -54,15 +54,17 @@ const App = {
     document.getElementById('ez-date').value  = dateStr;
     document.getElementById('ez-field').value = field;
     const cur = e[field] || (field === 'start' ? '08:00' : '17:00');
-    document.getElementById('ez-drum-wrap').innerHTML = Drum.htmlTime('ezTime', cur);
+    document.getElementById('ez-time-input').value = cur;
     document.getElementById('edit-zeit-modal').classList.add('open');
-    requestAnimationFrame(() => Drum.initAll(document.getElementById('ez-drum-wrap')));
+    // Focus triggers native iOS wheel picker
+    setTimeout(() => document.getElementById('ez-time-input').focus(), 150);
   },
 
   saveZeit() {
     const dateStr = document.getElementById('ez-date').value;
     const field   = document.getElementById('ez-field').value;
-    const timeStr = Drum.getTime('ezTime');
+    const timeStr = document.getElementById('ez-time-input').value;
+    if (!timeStr) { App.showToast('Bitte Zeit eingeben', 'error'); return; }
     DB.saveEintrag(dateStr, { [field]: timeStr });
     this.closeModal('edit-zeit-modal');
     App.showToast('Gespeichert ✓', 'success');

@@ -22,8 +22,8 @@ const Zeitkonto = {
       <div class="zk-kacheln-grid">
         ${kachelHtml('Gesamtsaldo', ue.gesamt, 'zk-gesamt', '⏱')}
         <div class="zk-row2">
-          ${kachelHtml('Konto 1 · Sockel', ue.sockel, 'zk-sockel', '🏦')}
-          ${kachelHtml('Konto 2 · Über Sockel', ue.ueberSockel, 'zk-ueber', '📈')}
+          ${kachelHtml('Konto 1', ue.sockel, 'zk-sockel', '🏦')}
+          ${kachelHtml('Konto 2', ue.ueberSockel, 'zk-ueber', '📈')}
         </div>
       </div>
       <div class="zk-limit-bar">
@@ -40,7 +40,7 @@ const Zeitkonto = {
       <div class="zk-section-title">Kontobuchungen</div>
       ${this._buildBuchungen()}
       <button class="btn-outline btn-full mt-8" onclick="App.openEntnahmeNeu(null)">
-        + Neue Kontobuchung
+        + Neue Zeitkonto-Buchung
       </button>`;
   },
 

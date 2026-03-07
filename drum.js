@@ -93,8 +93,12 @@ const Drum = {
 
     scroll.addEventListener('scroll', () => {
       clearTimeout(snapTimer);
-      snapTimer = setTimeout(snapToValue, 100);
+      snapTimer = setTimeout(snapToValue, 200);
     }, { passive: true });
+    // scrollend is more reliable on modern iOS
+    if ('onscrollend' in scroll) {
+      scroll.addEventListener('scrollend', snapToValue, { passive: true });
+    }
 
     this._updateHighlight(scroll, initV - minV);
   },
