@@ -219,8 +219,6 @@ const Timer = {
   },
 
   _renderButtons(e, feiertag, tagTyp, soll) {
-    if (feiertag || tagTyp==='urlaub' || tagTyp==='krank')
-      return `<p class="no-work-hint">${feiertag||'Kein Arbeitstag'}</p>`;
     if (!this.state.laufend && !e?.end)
       return `<button class="btn-primary btn-lg" onclick="Timer.arbeitsStart()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>

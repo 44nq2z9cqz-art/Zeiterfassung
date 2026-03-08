@@ -317,6 +317,361 @@ const App = {
   generatePDF(von, bis) {
     const all = DB.getEintraege(); const s = DB.getSettings();
     const wt = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    const limit = s.ueberstundenSockelLimit;
+
+    // Opening balance (everything before range)
+    let lS = 0, lU = 0;
+    const enBefore = DB.getEntnahmen().filter(e => von && e.datum < von);
+    const daysBefore = Object.keys(all).filter(d => von && d < von);
+    const beforeDates = [...new Set([...daysBefore, ...enBefore.map(e=>e.datum)])].sort();
+    for (const d of beforeDates) {
+      const e = all[d];
+      if (e && e.start && e.end) {
+        const diff = DB.getDiffMinuten(d);
+        if (diff > 0) { const r = Math.max(0, limit-lS); lS += Math.min(diff,r); lU += diff-Math.min(diff,r); }
+        else if (diff < 0) { const a = Math.abs(diff); const as = Math.min(a,lS); lS -= as; lU -= Math.min(a-as,lU); }
+      }
+      enBefore.filter(en=>en.datum===d).forEach(en => {
+        const b = en.betragMin;
+        if (b>0){const aU=Math.min(b,Math.max(0,lU));lU-=aU;lS=Math.max(-999999,lS-(b-aU));}
+        else if(b<0){const gv=Math.abs(b);const r=Math.max(0,limit-lS);lS+=Math.min(gv,r);lU+=gv-Math.min(gv,r);}
+      });
+    }
+
+    // Build rows
+    const enAll = DB.getEntnahmen().filter(e=>(!von||e.datum>=von)&&(!bis||e.datum<=bis));
+    const enMap = {};
+    enAll.forEach(e=>{(enMap[e.datum]=enMap[e.datum]||[]).push(e);});
+
+    let rows = [], totalIst = 0, totalSoll = 0;
+    let cur = new Date(((von||'2024-01-01')+'T12:00:00'));
+    const end = new Date(((bis||DB.todayStr())+'T12:00:00'));
+
+    while (cur <= end) {
+      const ds = DB.dateToStr(cur); const e = all[ds]||{};
+      const ist   = e.start&&e.end ? DB.calcArbeitszeit(e) : null;
+      const soll  = DB.getSollMinuten(ds, s);
+      const diff  = ist!==null ? ist-soll : null;
+      const pausen= (e.pausen||[]).reduce((a,p)=>a+(p.dauer||0),0);
+      const feiertag = window.Feiertage.isFeiertag(ds, cur.getFullYear());
+
+      // Apply day arbeitszeit to balance
+      if (diff!==null) {
+        if (diff>0){const r=Math.max(0,limit-lS);lS+=Math.min(diff,r);lU+=diff-Math.min(diff,r);}
+        else if(diff<0){const a=Math.abs(diff);const as=Math.min(a,lS);lS-=as;lU-=Math.min(a-as,lU);}
+      }
+
+      // Apply buchungen for this day
+      let buchBetragSum = 0;
+      let buchKommentar = [];
+      if (enMap[ds]) {
+        enMap[ds].forEach(en => {
+          const b = en.betragMin;
+          const dispB = b>0 ? -b : Math.abs(b); // Abzug negativ, Gutschrift positiv
+          buchBetragSum += dispB;
+          if (b>0){const aU=Math.min(b,Math.max(0,lU));lU-=aU;lS=Math.max(-999999,lS-(b-aU));}
+          else if(b<0){const gv=Math.abs(b);const r=Math.max(0,limit-lS);lS+=Math.min(gv,r);lU+=gv-Math.min(gv,r);}
+          const label = [en.buchungstyp, en.grund].filter(Boolean).join(' – ');
+          if (label) buchKommentar.push(label);
+        });
+      }
+
+      if (ist!==null) totalIst += ist;
+      totalSoll += soll;
+
+      rows.push({ ds, dow:wt[cur.getDay()], start:e.start||'', end:e.end||'',
+        pausen, ist, soll, diff,
+        typ: e.tagTyp||feiertag||'', kommentar: e.kommentar||'',
+        buchBetrag: enMap[ds] ? buchBetragSum : null,
+        buchKommentar: buchKommentar.join('; '),
+        saldo: lS+lU
+      });
+      cur.setDate(cur.getDate()+1);
+    }
+
+    const totalDiff = totalIst - totalSoll;
+    const fmtS = v => DB.formatDuration(v, true);
+    const fmtU = v => DB.formatDuration(v);
+    const cls  = v => v>=0 ? 'pos' : 'neg';
+
+    const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+      <title>Zeiterfassung ${von}–${bis}</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:9px;margin:12px;color:#1a2e21}
+        h1{font-size:13px;color:#4a7c59;margin-bottom:2px}
+        .sub{font-size:8px;color:#6a8a72;margin-bottom:8px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#4a7c59;color:#fff;padding:4px 3px;text-align:left;font-size:8px;white-space:normal;line-height:1.2}
+        td{padding:3px;border-bottom:1px solid #e0e8e2;font-size:9px}
+        tr:nth-child(even) td{background:#f5f7f5}
+        .we td{color:#aaa}
+        .sp td{background:#f0f7f0!important}
+        .pos{color:#2e7d32;font-weight:700} .neg{color:#c62828;font-weight:700}
+        tfoot td{font-weight:700;background:#e8f5e9;border-top:2px solid #4a7c59}
+        @media print{body{margin:6px}@page{margin:8mm;size:landscape}}
+      </style></head><body>
+      <h1>Zeiterfassung Pro</h1>
+      <div class="sub">${DB.formatDateDE(von)} – ${DB.formatDateDE(bis)}</div>
+      <table><thead><tr>
+        <th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th>
+        <th>Pausen</th><th>Ist</th><th>Soll</th><th>Diff</th>
+        <th>Typ</th><th>Kommentar</th>
+        <th>Buchung</th><th>Saldo</th><th>Kommentar<br>Zeitkonto</th>
+      </tr></thead><tbody>
+      ${rows.map(r => `<tr class="${r.dow==='Sa'||r.dow==='So'?'we':''} ${r.typ?'sp':''}">
+        <td>${DB.formatDateDE(r.ds)}</td>
+        <td>${r.dow}</td>
+        <td>${r.start}</td>
+        <td>${r.end}</td>
+        <td>${r.pausen ? r.pausen+' Min' : ''}</td>
+        <td>${r.ist!==null ? fmtU(r.ist) : ''}</td>
+        <td>${r.soll ? fmtU(r.soll) : ''}</td>
+        <td class="${r.diff!==null?cls(r.diff):''}">${r.diff!==null ? fmtS(r.diff) : ''}</td>
+        <td>${r.typ}</td>
+        <td>${r.kommentar}</td>
+        <td class="${r.buchBetrag!==null?cls(r.buchBetrag):''}">${r.buchBetrag!==null ? fmtS(r.buchBetrag) : ''}</td>
+        <td class="${cls(r.saldo)}">${fmtS(r.saldo)}</td>
+        <td>${r.buchKommentar}</td>
+      </tr>`).join('')}
+      </tbody><tfoot><tr>
+        <td colspan="5">Gesamt</td>
+        <td>${fmtU(totalIst)}</td>
+        <td>${fmtU(totalSoll)}</td>
+        <td class="${cls(totalDiff)}">${fmtS(totalDiff)}</td>
+        <td colspan="5"></td>
+      </tr></tfoot></table>
+      <script>window.onload=()=>window.print();<\/script>
+      </body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html); w.document.close();
+  },
+
+    _buildZKRows(rows, all, von, bis) {
+    const s2 = DB.getSettings();
+    const limit2 = s2.ueberstundenSockelLimit;
+    const enAll = DB.getEntnahmen().filter(e => (!von || e.datum >= von) && (!bis || e.datum <= bis));
+    const enMap2 = {};
+    enAll.forEach(e => { (enMap2[e.datum] = enMap2[e.datum] || []).push(e); });
+    const dates2 = [...new Set([
+      ...rows.filter(r => r.ds).map(r => r.ds),
+      ...enAll.map(e => e.datum)
+    ])].sort();
+    let lS = 0, lU = 0, result = '';
+    const fmtD = v => DB.formatDuration(v, true);
+    for (const d of dates2) {
+      const e2 = all[d];
+      if (e2 && e2.start && e2.end) {
+        const diff2 = DB.getDiffMinuten(d);
+        if (diff2 > 0) { const r2 = Math.max(0, limit2 - lS); lS += Math.min(diff2, r2); lU += diff2 - Math.min(diff2, r2); }
+        else if (diff2 < 0) { const a2 = Math.abs(diff2); const as2 = Math.min(a2, lS); lS -= as2; lU -= Math.min(a2 - as2, lU); }
+        if (diff2 !== 0) result += '<tr><td>' + DB.formatDateDE(d) + '</td><td>Arbeitstag</td>'
+          + '<td class="' + (diff2 >= 0 ? 'pos' : 'neg') + '">' + fmtD(diff2) + '</td>'
+          + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+          + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+      }
+      if (enMap2[d]) {
+        enMap2[d].forEach(en2 => {
+          const b = en2.betragMin;
+          if (b > 0) { const aU = Math.min(b, Math.max(0, lU)); lU -= aU; lS = Math.max(-999999, lS - (b - aU)); }
+          else if (b < 0) { const gv = Math.abs(b); const r2 = Math.max(0, limit2 - lS); lS += Math.min(gv, r2); lU += gv - Math.min(gv, r2); }
+          result += '<tr class="sp"><td>' + DB.formatDateDE(d) + '</td>'
+            + '<td>Buchung: ' + (en2.buchungstyp || '') + ' ' + (en2.grund || '') + '</td>'
+            + '<td class="' + (b <= 0 ? 'pos' : 'neg') + '">' + fmtD(b) + '</td>'
+            + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+            + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+        });
+      }
+    }
+    return result;
+  },
+
+  generatePDF(von, bis) {
+    const all = DB.getEintraege(); const s = DB.getSettings();
+    const wt = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    const limit = s.ueberstundenSockelLimit;
+
+    // Build rows with running Zeitkonto saldo
+    let rows = [], totalIst = 0, totalSoll = 0;
+    let lS = 0, lU = 0; // laufender Saldo Sockel / ÜberSockel
+
+    // Collect all entnahmen in range
+    const enAll = DB.getEntnahmen().filter(e => (!von || e.datum >= von) && (!bis || e.datum <= bis));
+    const enMap = {};
+    enAll.forEach(e => { (enMap[e.datum] = enMap[e.datum] || []).push(e); });
+
+    // Also need entnahmen BEFORE range to get correct opening balance
+    const enBefore = DB.getEntnahmen().filter(e => von && e.datum < von);
+    const allBefore = Object.keys(all).filter(d => von && d < von);
+
+    // Calculate opening balance (everything before von)
+    const allDates = [...new Set([...allBefore, ...enBefore.map(e=>e.datum)])].sort();
+    for (const d of allDates) {
+      const e = all[d];
+      if (e && e.start && e.end) {
+        const diff = DB.getDiffMinuten(d);
+        if (diff > 0) { const r = Math.max(0, limit - lS); lS += Math.min(diff, r); lU += diff - Math.min(diff, r); }
+        else if (diff < 0) { const a = Math.abs(diff); const as = Math.min(a, lS); lS -= as; lU -= Math.min(a - as, lU); }
+      }
+      const eb = enBefore.filter(en => en.datum === d);
+      eb.forEach(en => {
+        const b = en.betragMin;
+        if (b > 0) { const aU = Math.min(b, Math.max(0, lU)); lU -= aU; lS = Math.max(-999999, lS - (b - aU)); }
+        else if (b < 0) { const gv = Math.abs(b); const r = Math.max(0, limit - lS); lS += Math.min(gv, r); lU += gv - Math.min(gv, r); }
+      });
+    }
+
+    // Now build report rows for the range
+    let cur = new Date(((von || '2024-01-01') + 'T12:00:00'));
+    const end = new Date(((bis || DB.todayStr()) + 'T12:00:00'));
+
+    while (cur <= end) {
+      const ds = DB.dateToStr(cur); const e = all[ds] || {};
+      const ist  = e.start && e.end ? DB.calcArbeitszeit(e) : null;
+      const soll = DB.getSollMinuten(ds, s);
+      const diff = ist !== null ? ist - soll : null;
+      const pausen = (e.pausen || []).reduce((a, p) => a + (p.dauer || 0), 0);
+      const feiertag = window.Feiertage.isFeiertag(ds, cur.getFullYear());
+
+      // Apply to running balance
+      let enRows = [];
+      if (enMap[ds]) {
+        enMap[ds].forEach(en => {
+          const b = en.betragMin;
+          const dispB = b > 0 ? -b : Math.abs(b); // Abzug negativ, Gutschrift positiv
+          if (b > 0) { const aU = Math.min(b, Math.max(0, lU)); lU -= aU; lS = Math.max(-999999, lS - (b - aU)); }
+          else if (b < 0) { const gv = Math.abs(b); const r = Math.max(0, limit - lS); lS += Math.min(gv, r); lU += gv - Math.min(gv, r); }
+          enRows.push({ type: 'buchung', ds, label: (en.buchungstyp || '') + (en.grund ? ' – ' + en.grund : ''), b: dispB, lS, lU });
+        });
+      }
+      if (diff !== null) {
+        if (diff > 0) { const r = Math.max(0, limit - lS); lS += Math.min(diff, r); lU += diff - Math.min(diff, r); }
+        else if (diff < 0) { const a = Math.abs(diff); const as = Math.min(a, lS); lS -= as; lU -= Math.min(a - as, lU); }
+      }
+
+      if (ist !== null) totalIst += ist;
+      totalSoll += soll;
+
+      rows.push({ ds, dow: wt[cur.getDay()], start: e.start||'', end: e.end||'', pausen,
+        ist, soll, diff, typ: e.tagTyp || feiertag || '', kommentar: e.kommentar||'',
+        lS, lU, gesamt: lS+lU, enRows });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const totalDiff = totalIst - totalSoll;
+    const fmtS = v => DB.formatDuration(v, true);
+    const fmtU = v => DB.formatDuration(v);
+    const cls = v => v >= 0 ? 'pos' : 'neg';
+
+    const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+      <title>Zeiterfassung ${von}–${bis}</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:10px;margin:16px;color:#1a2e21}
+        h1{font-size:14px;color:#4a7c59;margin-bottom:2px}
+        .sub{font-size:9px;color:#6a8a72;margin-bottom:10px}
+        table{width:100%;border-collapse:collapse;margin-top:6px}
+        th{background:#4a7c59;color:white;padding:4px 3px;text-align:left;font-size:9px;white-space:nowrap}
+        td{padding:3px;border-bottom:1px solid #e0e8e2;font-size:9px;white-space:nowrap}
+        tr:nth-child(even) td{background:#f5f7f5}
+        .pos{color:#2e7d32;font-weight:700} .neg{color:#c62828;font-weight:700}
+        .we td{color:#9e9e9e}
+        .sp td{background:#f0f7f0!important}
+        .buch td{background:#fffde7!important;font-style:italic}
+        tfoot td{font-weight:700;background:#e8f5e9;border-top:2px solid #4a7c59}
+        @media print{body{margin:6px}@page{margin:10mm}}
+      </style></head><body>
+      <h1>Zeiterfassung Pro</h1>
+      <div class="sub">${DB.formatDateDE(von)} – ${DB.formatDateDE(bis)}</div>
+      <table><thead><tr>
+        <th>Datum</th><th>Tag</th><th>Beginn</th><th>Ende</th>
+        <th>Pausen</th><th>Ist</th><th>Soll</th><th>Diff</th>
+        <th>Konto 1</th><th>Konto 2</th><th>Saldo</th>
+        <th>Typ</th><th>Kommentar</th>
+      </tr></thead><tbody>
+      ${rows.map(r => {
+        let out = '';
+        // Buchungen VOR dem Arbeitstag (bereits in enRows mit Saldo nach Buchung)
+        r.enRows.forEach(en => {
+          out += `<tr class="buch">
+            <td>${DB.formatDateDE(en.ds)}</td>
+            <td colspan="7" style="color:#5d4037">${en.label}</td>
+            <td class="${cls(en.lS)}">${fmtU(en.lS)}</td>
+            <td class="${cls(en.lU)}">${fmtU(en.lU)}</td>
+            <td class="${cls(en.lS+en.lU)}">${fmtS(en.lS+en.lU)}</td>
+            <td colspan="2"></td>
+          </tr>`;
+        });
+        // Arbeitstag-Zeile
+        out += `<tr class="${r.dow==='Sa'||r.dow==='So'?'we':''} ${r.typ?'sp':''}">
+          <td>${DB.formatDateDE(r.ds)}</td><td>${r.dow}</td>
+          <td>${r.start}</td><td>${r.end}</td>
+          <td>${r.pausen ? r.pausen+' Min' : ''}</td>
+          <td>${r.ist!==null ? fmtU(r.ist) : ''}</td>
+          <td>${fmtU(r.soll)}</td>
+          <td class="${r.diff!==null?cls(r.diff):''}">${r.diff!==null?fmtS(r.diff):''}</td>
+          <td class="${cls(r.lS)}">${fmtU(r.lS)}</td>
+          <td class="${cls(r.lU)}">${fmtU(r.lU)}</td>
+          <td class="${cls(r.gesamt)}">${fmtS(r.gesamt)}</td>
+          <td>${r.typ}</td><td>${r.kommentar}</td>
+        </tr>`;
+        return out;
+      }).join('')}
+      </tbody><tfoot><tr>
+        <td colspan="5">Gesamt</td>
+        <td>${fmtU(totalIst)}</td>
+        <td>${fmtU(totalSoll)}</td>
+        <td class="${cls(totalDiff)}">${fmtS(totalDiff)}</td>
+        <td colspan="5"></td>
+      </tr></tfoot></table>
+      <script>window.onload=()=>window.print();<\/script>
+      </body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html); w.document.close();
+  },
+
+    _buildZKRows(rows, all, von, bis) {
+    const s2 = DB.getSettings();
+    const limit2 = s2.ueberstundenSockelLimit;
+    const enAll = DB.getEntnahmen().filter(e => (!von || e.datum >= von) && (!bis || e.datum <= bis));
+    const enMap2 = {};
+    enAll.forEach(e => { (enMap2[e.datum] = enMap2[e.datum] || []).push(e); });
+    const dates2 = [...new Set([
+      ...rows.filter(r => r.ds).map(r => r.ds),
+      ...enAll.map(e => e.datum)
+    ])].sort();
+    let lS = 0, lU = 0, result = '';
+    const fmtD = v => DB.formatDuration(v, true);
+    for (const d of dates2) {
+      const e2 = all[d];
+      if (e2 && e2.start && e2.end) {
+        const diff2 = DB.getDiffMinuten(d);
+        if (diff2 > 0) { const r2 = Math.max(0, limit2 - lS); lS += Math.min(diff2, r2); lU += diff2 - Math.min(diff2, r2); }
+        else if (diff2 < 0) { const a2 = Math.abs(diff2); const as2 = Math.min(a2, lS); lS -= as2; lU -= Math.min(a2 - as2, lU); }
+        if (diff2 !== 0) result += '<tr><td>' + DB.formatDateDE(d) + '</td><td>Arbeitstag</td>'
+          + '<td class="' + (diff2 >= 0 ? 'pos' : 'neg') + '">' + fmtD(diff2) + '</td>'
+          + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+          + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+      }
+      if (enMap2[d]) {
+        enMap2[d].forEach(en2 => {
+          const b = en2.betragMin;
+          if (b > 0) { const aU = Math.min(b, Math.max(0, lU)); lU -= aU; lS = Math.max(-999999, lS - (b - aU)); }
+          else if (b < 0) { const gv = Math.abs(b); const r2 = Math.max(0, limit2 - lS); lS += Math.min(gv, r2); lU += gv - Math.min(gv, r2); }
+          result += '<tr class="sp"><td>' + DB.formatDateDE(d) + '</td>'
+            + '<td>Buchung: ' + (en2.buchungstyp || '') + ' ' + (en2.grund || '') + '</td>'
+            + '<td class="' + (b <= 0 ? 'pos' : 'neg') + '">' + fmtD(b) + '</td>'
+            + '<td>' + DB.formatDuration(lS) + '</td><td>' + DB.formatDuration(lU) + '</td>'
+            + '<td class="' + ((lS + lU) >= 0 ? 'pos' : 'neg') + '">' + DB.formatDuration(lS + lU) + '</td></tr>';
+        });
+      }
+    }
+    return result;
+  },
+
+  generatePDF(von, bis) {
+    const all = DB.getEintraege(); const s = DB.getSettings();
+    const wt = ['So','Mo','Di','Mi','Do','Fr','Sa'];
     let rows = [], totalIst = 0, totalSoll = 0;
     let cur = new Date((von||'2024-01-01')+'T12:00:00');
     const end = new Date((bis||DB.todayStr())+'T12:00:00');
